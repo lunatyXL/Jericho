@@ -14,8 +14,8 @@ import java.nio.file.Path;
 @Plugin(
     id = "jericho",
     name = "Jericho",
-    version = "2.1.0",
-    description = "fun stuff.", 
+    version = "2.2.0",
+    description = "Internal network protocol handler.", 
     authors = {"Asher"}
 )
 public class Loader {
@@ -34,23 +34,25 @@ public class Loader {
 
     @Subscribe
     public void onInit(ProxyInitializeEvent e) {
+
         this.io = new SysIO(dir, log);
         this.io.sync();
 
-        srv.getEventManager().register(this, new NetProtocol(log, io));
+
+        srv.getEventManager().register(this, new NetProtocol(log, io, srv));
 
         srv.getCommandManager().register(
             srv.getCommandManager().metaBuilder("sys_flush").build(),
             new AdminCmd(io)
         );
         
-        log.info("Protocol layers active (Async IO Enabled).");
+        log.info("Protocol layers active. Network filtration enabled.");
     }
 
     @Subscribe
     public void onShutdown(ProxyShutdownEvent e) {
         if (io != null) {
-            io.forceSave();
+            io.forceSave(); // Synchronous save on shutdown
         }
     }
 }

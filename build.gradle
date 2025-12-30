@@ -5,7 +5,7 @@ plugins {
 }
 
 group = 'in.lunaty.asher'
-version = '2.1.0-RELEASE'
+version = '2.2.0-STABLE'
 
 repositories {
     mavenCentral()
