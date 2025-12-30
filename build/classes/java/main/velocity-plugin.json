@@ -1,1 +1,1 @@
-{"id":"jericho","name":"Jericho","version":"2.2.0","description":"Internal network protocol handler.","authors":["Asher"],"dependencies":[],"main":"in.lunaty.asher.Loader"}
+{"id":"jericho","name":"Jericho","version":"2.3.0","description":"Internal network protocol handler.","authors":["Asher"],"dependencies":[],"main":"in.lunaty.asher.Loader"}

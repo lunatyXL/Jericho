@@ -18,7 +18,7 @@ public class AdminCmd implements SimpleCommand {
             return;
         }
 
-        io.sync(); 
+        io.sync();
         invocation.source().sendMessage(Component.text("Protocol tables flushed.", NamedTextColor.GREEN));
     }
 }

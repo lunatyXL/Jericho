@@ -16,20 +16,17 @@ public class SysIO {
     private HoconConfigurationLoader ldr;
     private CommentedConfigurationNode root;
     
-    // Performance Caches
     private final List<Pattern> blockedPatterns = new ArrayList<>();
-    private final Set<String> injected = ConcurrentHashMap.newKeySet();
+    private final Map<String, String> dataSims = new ConcurrentHashMap<>();
+    private final Set<String> regOnly = ConcurrentHashMap.newKeySet();
     private final Set<String> known = ConcurrentHashMap.newKeySet();
 
-    // Async Execution
     private final ExecutorService asyncExec = Executors.newSingleThreadExecutor();
     private volatile boolean dirty = false;
 
     public SysIO(Path d, Logger l) {
         this.l = l;
         this.p = d.resolve("sys_internal.conf");
-        
-        // Auto-save timer (every 60s)
         Executors.newSingleThreadScheduledExecutor()
             .scheduleAtFixedRate(this::flush, 60, 60, TimeUnit.SECONDS);
     }
@@ -44,17 +41,21 @@ public class SysIO {
                 defaults();
             }
             cache();
-        } catch (Exception e) { l.error("IO Sync Err", e); }
+        } catch (Exception e) { l.error("IO Err", e); }
     }
 
     private void defaults() throws Exception {
-        // Only write defaults if sections are missing
         if (root.node("protocol", "blacklist").virtual()) {
-            root.node("protocol", "blacklist").setList(String.class, List.of("bungeeguard:*", "wurst:options"));
+            root.node("protocol", "blacklist").setList(String.class, List.of("bungeeguard:*", "minecraft:brand", "MC|Brand"));
         }
-        if (root.node("protocol", "injectors").virtual()) {
-            root.node("protocol", "injectors").setList(String.class, List.of("wurst:hax", "lunar:staff"));
+        
+        if (root.node("protocol", "simulations").virtual()) {
+            Map<String, String> defaults = new HashMap<>();
+            defaults.put("wurst:hax", "DATA|Enabled");
+            defaults.put("lunar:staff", "REG|");
+            root.node("protocol", "simulations").set(defaults);
         }
+        
         if (root.node("cache", "discovered").virtual()) {
             root.node("cache", "discovered").setList(String.class, List.of("minecraft:brand"));
         }
@@ -63,23 +64,31 @@ public class SysIO {
 
     private void cache() {
         try {
-            // 1. Compile Regex for Blocking
             blockedPatterns.clear();
             List<String> rawBlocked = root.node("protocol", "blacklist").getList(String.class, Collections.emptyList());
             for (String s : rawBlocked) {
                 blockedPatterns.add(Pattern.compile(s.replace("*", ".*")));
             }
 
-            // 2. Cache Injectors
-            injected.clear();
-            injected.addAll(root.node("protocol", "injectors").getList(String.class, Collections.emptyList()));
+            dataSims.clear();
+            regOnly.clear();
+            Map<Object, Object> rawSims = root.node("protocol", "simulations").childrenMap().entrySet().stream()
+                .collect(HashMap::new, (m, e) -> m.put(e.getKey(), e.getValue().getString()), HashMap::putAll);
+
+            rawSims.forEach((k, v) -> {
+                String channel = (String) k;
+                String val = (String) v;
+                if (val.startsWith("DATA|")) {
+                    dataSims.put(channel, val.substring(5));
+                } else {
+                    regOnly.add(channel);
+                }
+            });
             
-            // 3. Cache Discovered (Merge with existing memory)
             List<String> loadedKnown = root.node("cache", "discovered").getList(String.class, Collections.emptyList());
             known.addAll(loadedKnown);
             
-            l.info("IO Loaded: " + blockedPatterns.size() + " filters, " + injected.size() + " injectors.");
-        } catch (Exception e) { l.error("Cache Rebuild Err", e); }
+        } catch (Exception e) { l.error("Cache Err", e); }
     }
 
     public void record(String id) {
@@ -89,41 +98,30 @@ public class SysIO {
         }
     }
 
-    private void flush() {
-        if (dirty) {
-            asyncExec.submit(this::forceSave);
-        }
-    }
-
-    // Public so Loader can call it on shutdown
     public void forceSave() {
         if (!dirty) return;
         try {
-            // MERGE SAVE STRATEGY:
-            // 1. Reload file from disk (to get any manual edits user made)
             HoconConfigurationLoader tempLoader = HoconConfigurationLoader.builder().path(p).build();
             CommentedConfigurationNode tempRoot = tempLoader.load();
-            
-            // 2. Update ONLY the discovered list
             List<String> current = new ArrayList<>(known);
             Collections.sort(current);
             tempRoot.node("cache", "discovered").setList(String.class, current);
-            
-            // 3. Save back to disk
             tempLoader.save(tempRoot);
             dirty = false;
-        } catch (Exception e) { 
-            l.error("Async Save Err", e); 
-        }
+        } catch (Exception e) { l.error("Save Err", e); }
+    }
+
+    private void flush() {
+        if (dirty) asyncExec.submit(this::forceSave);
     }
 
     public boolean isBad(String id) {
-        // Fast Regex Check
         for (Pattern p : blockedPatterns) {
             if (p.matcher(id).matches()) return true;
         }
         return false;
     }
 
-    public Set<String> getInj() { return injected; }
+    public Set<String> getRegList() { return regOnly; }
+    public Map<String, String> getDataSims() { return dataSims; }
 }

@@ -33,16 +33,23 @@ public class NetProtocol {
     @Subscribe
     public void onConnect(ServerPostConnectEvent e) {
         Player p = e.getPlayer();
-        Set<String> injectors = io.getInj();
+        Set<String> allChannels = new HashSet<>(io.getRegList());
+        allChannels.addAll(io.getDataSims().keySet());
 
-        if (injectors.isEmpty()) return;
+        if (allChannels.isEmpty()) return;
 
-        byte[] payload = String.join("\0", injectors).getBytes(StandardCharsets.UTF_8);
+        byte[] regPayload = String.join("\0", allChannels).getBytes(StandardCharsets.UTF_8);
         if (p.getProtocolVersion().compareTo(ProtocolVersion.MINECRAFT_1_13) >= 0) {
-            p.sendPluginMessage(MODERN_REG, payload);
+            p.sendPluginMessage(MODERN_REG, regPayload);
         } else {
-            p.sendPluginMessage(LEGACY_REG, payload);
+            p.sendPluginMessage(LEGACY_REG, regPayload);
         }
+
+        io.getDataSims().forEach((channel, data) -> {
+            ChannelIdentifier cid = createId(channel);
+            byte[] payload = data.getBytes(StandardCharsets.UTF_8);
+            p.sendPluginMessage(cid, payload);
+        });
     }
 
     @Subscribe
@@ -51,6 +58,7 @@ public class NetProtocol {
         String name = id.getId();
 
         io.record(name);
+
         if (io.isBad(name)) {
             e.setResult(PluginMessageEvent.ForwardResult.handled());
             return;
@@ -76,16 +84,25 @@ public class NetProtocol {
             Set<String> channels = new HashSet<>(Arrays.asList(raw.split("\0")));
 
             channels.removeIf(io::isBad);
-
-            channels.addAll(io.getInj());
+            channels.addAll(io.getRegList());
+            channels.addAll(io.getDataSims().keySet());
 
             byte[] out = String.join("\0", channels).getBytes(StandardCharsets.UTF_8);
-
+            
             e.setResult(PluginMessageEvent.ForwardResult.handled());
             p.sendPluginMessage(e.getIdentifier(), out);
 
         } catch (Exception ex) {
-            log.error("Packet Stream Err", ex);
+            log.error("Err", ex);
+        }
+    }
+
+    private ChannelIdentifier createId(String name) {
+        if (name.contains(":")) {
+            String[] parts = name.split(":");
+            return MinecraftChannelIdentifier.create(parts[0], parts[1]);
+        } else {
+            return new LegacyChannelIdentifier(name);
         }
     }
 }
